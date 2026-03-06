@@ -1,0 +1,323 @@
+// prisma/schema.prisma
+// HRMS Core — PostgreSQL via Prisma ORM
+// Chat, notifications, audit logs → MongoDB (Mongoose)
+// Auth + Storage → Supabase
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════════════
+// ENUMS
+// ═══════════════════════════════════════════════════
+
+enum EmployeeStatus {
+  ACTIVE
+  INACTIVE
+  ON_NOTICE
+  TERMINATED
+}
+
+enum Role {
+  ADMIN
+  HR
+  MANAGER
+  EMPLOYEE
+}
+
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  HALF_DAY
+  WFH
+  ON_LEAVE
+}
+
+enum RecruitmentStage {
+  APPLIED
+  SCREENING
+  INTERVIEW
+  OFFER
+  JOINED
+  REJECTED
+}
+
+// ═══════════════════════════════════════════════════
+// ORGANIZATION
+// ═══════════════════════════════════════════════════
+
+model Department {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String?
+  headId      String?
+  head        Employee?  @relation("DeptHead", fields: [headId], references: [id])
+  employees   Employee[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("departments")
+}
+
+// ═══════════════════════════════════════════════════
+// EMPLOYEES
+// ═══════════════════════════════════════════════════
+
+model Employee {
+  id              String         @id @default(uuid())  // mirrors Supabase auth.users.id
+  empCode         String         @unique
+  fullName        String
+  email           String         @unique
+  phone           String?
+  dateOfBirth     DateTime?      @db.Date
+  address         String?
+  departmentId    String
+  department      Department     @relation(fields: [departmentId], references: [id])
+  managerId       String?
+  manager         Employee?      @relation("ReportsTo", fields: [managerId], references: [id])
+  reports         Employee[]     @relation("ReportsTo")
+  headOfDepts     Department[]   @relation("DeptHead")
+  designation     String
+  joiningDate     DateTime       @db.Date
+  role            Role           @default(EMPLOYEE)
+  status          EmployeeStatus @default(ACTIVE)
+  deletedAt       DateTime?
+
+  // Relations
+  attendance      Attendance[]
+  leaveRequests   LeaveRequest[]
+  leaveBalances   LeaveBalance[]
+  payrollRuns     PayrollRun[]
+  salaryStructure SalaryStructure?
+  performanceGoals PerformanceGoal[]
+  notifPrefs      NotificationPreference[]
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([departmentId])
+  @@index([managerId])
+  @@index([status])
+  @@index([role])
+  @@map("employees")
+}
+
+// ═══════════════════════════════════════════════════
+// ATTENDANCE
+// ═══════════════════════════════════════════════════
+
+model Attendance {
+  id           String           @id @default(uuid())
+  employeeId   String
+  employee     Employee         @relation(fields: [employeeId], references: [id])
+  date         DateTime         @db.Date
+  clockIn      DateTime?
+  clockOut     DateTime?
+  totalHours   Decimal?         @db.Decimal(5, 2)
+  overtime     Decimal?         @db.Decimal(5, 2)
+  status       AttendanceStatus @default(PRESENT)
+  note         String?
+  isRegularized Boolean         @default(false)
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@unique([employeeId, date])
+  @@index([employeeId, date])
+  @@index([date])
+  @@index([status])
+  @@map("attendance")
+}
+
+// ═══════════════════════════════════════════════════
+// LEAVES
+// ═══════════════════════════════════════════════════
+
+model LeaveType {
+  id           String         @id @default(uuid())
+  name         String         @unique   // Annual, Sick, Casual, etc.
+  maxDaysPerYear Int
+  isCarryForward Boolean      @default(false)
+  isPaid       Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  leaveRequests LeaveRequest[]
+  leaveBalances LeaveBalance[]
+
+  @@map("leave_types")
+}
+
+model LeaveBalance {
+  id           String    @id @default(uuid())
+  employeeId   String
+  employee     Employee  @relation(fields: [employeeId], references: [id])
+  leaveTypeId  String
+  leaveType    LeaveType @relation(fields: [leaveTypeId], references: [id])
+  year         Int
+  allocated    Decimal   @db.Decimal(5, 1)
+  used         Decimal   @db.Decimal(5, 1) @default(0)
+  remaining    Decimal   @db.Decimal(5, 1)
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([employeeId, leaveTypeId, year])
+  @@index([employeeId])
+  @@map("leave_balances")
+}
+
+model LeaveRequest {
+  id           String      @id @default(uuid())
+  employeeId   String
+  employee     Employee    @relation(fields: [employeeId], references: [id])
+  leaveTypeId  String
+  leaveType    LeaveType   @relation(fields: [leaveTypeId], references: [id])
+  fromDate     DateTime    @db.Date
+  toDate       DateTime    @db.Date
+  days         Decimal     @db.Decimal(4, 1)
+  reason       String?
+  status       LeaveStatus @default(PENDING)
+  approvedById String?
+  approvedAt   DateTime?
+  remarks      String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([employeeId, status])
+  @@index([approvedById])
+  @@index([fromDate, toDate])
+  @@index([status])
+  @@map("leave_requests")
+}
+
+// ═══════════════════════════════════════════════════
+// PAYROLL
+// ═══════════════════════════════════════════════════
+
+model SalaryStructure {
+  id              String   @id @default(uuid())
+  employeeId      String   @unique
+  employee        Employee @relation(fields: [employeeId], references: [id])
+  basicSalary     Decimal  @db.Decimal(12, 2)
+  allowances      Json     // { hra: 5000, da: 2000, transport: 1500 }
+  deductionConfig Json     // { pfPercentage: 12, esiPercentage: 0.75, tds: 0 }
+  effectiveFrom   DateTime @db.Date
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("salary_structures")
+}
+
+model PayrollRun {
+  id            String    @id @default(uuid())
+  employeeId    String
+  employee      Employee  @relation(fields: [employeeId], references: [id])
+  monthYear     DateTime  @db.Date              // first day of month
+  workingDays   Int
+  presentDays   Decimal   @db.Decimal(5, 1)
+  basicSalary   Decimal   @db.Decimal(12, 2)
+  allowances    Json
+  grossPay      Decimal   @db.Decimal(12, 2)
+  deductions    Json
+  netPay        Decimal   @db.Decimal(12, 2)
+  payslipUrl    String?                          // Supabase Storage signed path
+  isLocked      Boolean   @default(false)        // immutable after lock
+  processedAt   DateTime?
+  processedById String?
+  createdAt     DateTime  @default(now())
+
+  @@unique([employeeId, monthYear])
+  @@index([monthYear])
+  @@index([isLocked])
+  @@map("payroll_runs")
+}
+
+// ═══════════════════════════════════════════════════
+// PERFORMANCE
+// ═══════════════════════════════════════════════════
+
+model PerformanceGoal {
+  id           String    @id @default(uuid())
+  employeeId   String
+  employee     Employee  @relation(fields: [employeeId], references: [id])
+  title        String
+  description  String?
+  quarter      Int       // 1-4
+  year         Int
+  targetValue  String?
+  actualValue  String?
+  rating       Int?      // 1-5
+  reviewedById String?
+  reviewedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([employeeId, year, quarter])
+  @@map("performance_goals")
+}
+
+// ═══════════════════════════════════════════════════
+// RECRUITMENT
+// ═══════════════════════════════════════════════════
+
+model JobPosting {
+  id           String        @id @default(uuid())
+  title        String
+  departmentId String
+  description  String
+  requirements String?
+  isOpen       Boolean       @default(true)
+  postedById   String
+  closedAt     DateTime?
+  applicants   Applicant[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([isOpen])
+  @@map("job_postings")
+}
+
+model Applicant {
+  id           String           @id @default(uuid())
+  jobPostingId String
+  jobPosting   JobPosting       @relation(fields: [jobPostingId], references: [id])
+  fullName     String
+  email        String
+  phone        String?
+  cvUrl        String?          // Supabase Storage path
+  stage        RecruitmentStage @default(APPLIED)
+  notes        String?
+  assignedToId String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@index([jobPostingId, stage])
+  @@index([stage])
+  @@map("applicants")
+}
+
+// ═══════════════════════════════════════════════════
+// NOTIFICATION PREFERENCES (user controls)
+// ═══════════════════════════════════════════════════
+
+model NotificationPreference {
+  id          String   @id @default(uuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  type        String   // 'leave_approved', 'mention', 'payslip_ready', etc.
+  inApp       Boolean  @default(true)
+  push        Boolean  @default(true)
+  email       Boolean  @default(true)
+  emailDigest Boolean  @default(false)
+
+  @@unique([employeeId, type])
+  @@map("notification_preferences")
+}

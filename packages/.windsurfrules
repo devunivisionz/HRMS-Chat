@@ -1,0 +1,106 @@
+# Shared Packages Rules — packages/
+# Applies to: packages/types and packages/email-templates
+
+## packages/types — Shared TypeScript Types
+
+### What belongs here
+- TypeScript interfaces and types used by BOTH apps/web AND apps/api
+- Zod schemas that are shared (form validation on frontend + API validation on backend)
+- Enums that map to database enums
+
+### What does NOT belong here
+- Business logic
+- Database clients (Prisma, Mongoose)
+- Express or Next.js specific code
+- Environment-specific config
+
+### Export structure
+```typescript
+// packages/types/src/index.ts — barrel export
+export * from './employee';
+export * from './attendance';
+export * from './leave';
+export * from './payroll';
+export * from './chat';
+export * from './notifications';
+export * from './common';
+```
+
+### Type file template
+```typescript
+// packages/types/src/leave.ts
+import { z } from 'zod';
+
+// Zod schema = single source of truth
+export const leaveRequestSchema = z.object({
+  leaveTypeId: z.string().uuid(),
+  fromDate:    z.string().datetime({ offset: true }),
+  toDate:      z.string().datetime({ offset: true }),
+  days:        z.number().positive().max(365),
+  reason:      z.string().max(500).optional(),
+});
+
+// TypeScript type derived from schema — never separately defined
+export type LeaveRequestInput = z.infer<typeof leaveRequestSchema>;
+
+// Response types (what API returns) — plain interfaces
+export interface LeaveRequest {
+  id:         string;
+  employeeId: string;
+  leaveType:  { name: string };
+  fromDate:   string;
+  toDate:     string;
+  days:       number;
+  status:     LeaveStatus;
+  reason?:    string;
+  createdAt:  string;
+}
+
+export type LeaveStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+```
+
+## packages/email-templates — React Email Templates
+
+### Template requirements
+- Every template must export a named component + a plain text fallback
+- Use only `@react-email/components` — no Tailwind (email clients don't support it)
+- Test preview at localhost:3001 via `pnpm email:preview`
+- All dynamic data must be typed with an interface
+
+### Template structure
+```tsx
+// packages/email-templates/src/LeaveApprovalEmail.tsx
+import { Html, Body, Container, Heading, Text, Button, Hr } from '@react-email/components';
+
+interface LeaveApprovalEmailProps {
+  employeeName: string;
+  leaveType:    string;
+  fromDate:     string;
+  toDate:       string;
+  days:         number;
+  approvedBy:   string;
+  remaining:    number;
+  loginUrl:     string;
+}
+
+export function LeaveApprovalEmail({ employeeName, ...props }: LeaveApprovalEmailProps) {
+  return (
+    <Html>
+      <Body style={{ fontFamily: 'sans-serif', backgroundColor: '#f9fafb' }}>
+        <Container style={{ maxWidth: '600px', margin: '0 auto', padding: '40px 24px' }}>
+          <Heading>Leave Approved ✅</Heading>
+          <Text>Hi {employeeName},</Text>
+          <Text>Your {props.leaveType} leave has been approved.</Text>
+          ...
+          <Button href={props.loginUrl}>View in HRMS</Button>
+        </Container>
+      </Body>
+    </Html>
+  );
+}
+
+// Plain text fallback — required for spam filters
+export function leaveApprovalText(props: LeaveApprovalEmailProps): string {
+  return `Hi ${props.employeeName}, your ${props.leaveType} leave has been approved.`;
+}
+```

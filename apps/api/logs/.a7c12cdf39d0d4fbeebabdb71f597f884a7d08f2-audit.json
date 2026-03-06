@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "/Users/macm2/projects/HRMS-Univisionz/apps/api/logs/.a7c12cdf39d0d4fbeebabdb71f597f884a7d08f2-audit.json",
+    "files": [
+        {
+            "date": 1772797663866,
+            "name": "/Users/macm2/projects/HRMS-Univisionz/apps/api/logs/app-2026-03-06.log",
+            "hash": "2fad0c1f7463f6e4f0f0cd6b096aa603138de57d72133b4a879aba7aefa9e113"
+        }
+    ],
+    "hashType": "sha256"
+}

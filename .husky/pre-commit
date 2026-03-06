@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# 1. Scan for secrets (gitleaks)
+if command -v gitleaks &> /dev/null; then
+  gitleaks protect --staged -v || {
+    echo "❌ Gitleaks detected potential secrets. Commit blocked."
+    exit 1
+  }
+fi
+
+# 2. Run lint-staged (format + lint only changed files)
+pnpm lint-staged

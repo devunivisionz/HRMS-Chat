@@ -1,0 +1,127 @@
+# HRMS + InHouse Chat — Windsurf AI Rules
+# Version: 4.0 | Stack: Next.js 14 + Express.js + Poly-Database
+# These rules apply to ALL files in the project.
+
+## PROJECT IDENTITY
+You are working on an internal HRMS (Human Resource Management System) with an
+integrated InHouse Chat tool for a 20-person company. This is a monolithic PWA.
+Priority: HRMS features FIRST, Chat SECOND.
+
+## STACK OVERVIEW
+- Frontend:  Next.js 14 (App Router), TypeScript, Tailwind CSS, shadcn/ui
+- Backend:   Express.js 5, TypeScript, Socket.io
+- Databases: PostgreSQL (Prisma ORM), MongoDB Atlas (Mongoose), Supabase (Auth + Storage + Realtime)
+- Cache:     Redis (ioredis + BullMQ)
+- Monorepo:  pnpm + Turborepo
+- Testing:   Vitest + Playwright
+- Deploy:    Docker + Nginx + PM2 (free tools only — NO paid services in dev)
+
+## ABSOLUTE RULES — NEVER VIOLATE
+
+### TypeScript
+- ALWAYS use `strict: true`. NEVER use `any`. Use `unknown` + type narrowing instead.
+- NEVER use type assertions (`as SomeType`) at module boundaries — add a comment if truly needed.
+- ALWAYS derive TypeScript types from Zod schemas: `type X = z.infer<typeof xSchema>`. Never duplicate type definitions.
+- ALL exported functions must have explicit return types.
+- Use `type` for data shapes, `interface` only for declaration merging.
+
+### React / Next.js
+- ALWAYS use named exports for components. `default export` only for Next.js page.tsx / layout.tsx (framework requirement).
+- NEVER use `export default function MyComponent` in non-page files.
+- Pages (`page.tsx`) are Server Components by default. Add `'use client'` only for interactivity.
+- NEVER fetch data in `useEffect`. Use Server Components or TanStack Query (`useQuery`).
+- NEVER use raw `<img>` tags. Always use `next/image`.
+- NEVER use `<a>` for internal navigation. Always use `next/link`.
+- Components must be under 150 lines. Split if longer.
+- One component per file. No multi-component files.
+- Lazy-load heavy components: `dynamic(() => import(...), { ssr: false })` for charts, PDFs, rich text.
+
+### CSS / Tailwind
+- Tailwind utility classes ONLY. NO CSS Modules. NO styled-components. NO emotion. NO inline `style={{}}` (except truly dynamic values).
+- NEVER hardcode hex/rgb colors in className strings. Use CSS variable tokens defined in globals.css.
+- NEVER use `!important`.
+- ALWAYS write Tailwind classes in order: layout → position → box model → typography → visual → transition → responsive (sm/md/lg) → state (hover/focus/disabled).
+- Use `cn()` from `@/lib/utils` for conditional class merging.
+- Use `cva()` from `class-variance-authority` for component variants — never ternary chains for variants.
+- Dark mode: every `bg-`, `text-`, `border-` class needs a `dark:` counterpart, or must use a CSS variable token.
+
+### API / Express
+- Middleware order is FIXED: authenticate → requireRole → validate(zodSchema) → handler → next(error)
+- NEVER call `res.status(500).json(...)` inline. Always `next(error)` to the global error handler.
+- ALWAYS use `AppError` class for thrown errors: `throw new AppError('CODE', statusCode)`.
+- API response shape is FIXED — success: `{ success: true, data: ... }`, error: `{ success: false, error: { code, message } }`.
+- Paginate ALL list endpoints. Never return unbounded arrays.
+- ALWAYS use `Promise.all([])` for independent async operations. Never sequential awaits.
+
+### Database
+- PostgreSQL (Prisma): HRM data only. ALWAYS select specific fields — never `findMany()` with no `select`. ALWAYS add `@@index` for filtered/sorted columns in schema.
+- MongoDB (Mongoose): Chat, notifications, activity feed, audit logs only. ALWAYS use `.lean()` for read-only queries. Use cursor-based pagination for chat messages.
+- Supabase: Auth + Storage + Realtime only. ALWAYS use signed URLs for private file access.
+- Redis: Ephemeral data only. Presence TTL, rate limits, cache, BullMQ queues.
+- Cache pattern: check Redis → DB miss → store with TTL → invalidate on mutation.
+
+### Security
+- NEVER trust role/permissions from client request body or headers.
+- NEVER commit secrets or credentials. Always use environment variables.
+- ALWAYS validate file uploads with `file-type` package (real MIME detection, not extension).
+- ALWAYS sanitize filenames: `path.basename(name).replace(/[^a-zA-Z0-9._-]/g, '_')`.
+- MongoDB queries: ALWAYS validate ObjectId with `isValidObjectId()`. NEVER interpolate user input into query operators.
+- Payroll runs are IMMUTABLE after lock — never allow updates to locked payroll.
+
+### Performance
+- Use `Promise.all()` for parallel DB queries.
+- Redis-cache expensive queries (leave balance, org chart) with appropriate TTL.
+- Socket.io: ALWAYS use room-based emit (`io.to(roomId).emit`). NEVER broadcast to all sockets.
+- Throttle typing indicators on client (2000ms). Debounce typing stop (3000ms).
+
+### Notifications
+- Push uses `web-push` with VAPID keys. NEVER use Firebase FCM (paid/Google dependency).
+- iOS PWA push: `Notification.requestPermission()` MUST be inside a user gesture handler (onClick).
+- Store `PushSubscription` per user+device in MongoDB. One user can have multiple device subscriptions.
+- ALWAYS enqueue push/email via BullMQ worker — never send synchronously in request handler.
+
+### Git / Commits
+- Branch naming: `feat/`, `fix/`, `chore/`, `refactor/`, `docs/` prefixes.
+- Commits follow Conventional Commits: `feat(module): description`.
+- One concern per PR. No mixed features + fixes.
+
+### Toolchain — FREE ONLY
+- NEVER suggest paid tools, services, or libraries.
+- Approved free alternatives: Vitest (not Jest paid plans), Playwright (not Cypress paid), DBeaver (not TablePlus paid), Uptime Kuma (not Datadog), Sentry free tier, Grafana (self-hosted).
+
+## MODULE OWNERSHIP MAP
+When generating code, route it to the correct DB client:
+| Module           | DB Client          | Notes                              |
+|------------------|--------------------|------------------------------------|
+| employees        | Prisma (PG)        | + Supabase Storage for docs        |
+| attendance       | Prisma (PG)        | + Redis for cache                  |
+| leaves           | Prisma (PG)        | + Mongo for activity feed event    |
+| payroll          | Prisma (PG)        | + Supabase Storage for PDFs        |
+| performance      | Prisma (PG)        | + Mongoose for comments            |
+| recruitment      | Prisma (PG)        | + Supabase Storage for CVs         |
+| chat             | Mongoose (Mongo)   | + Socket.io + Supabase RT          |
+| notifications    | Mongoose (Mongo)   | + BullMQ + web-push                |
+| auth             | Supabase Admin SDK | + Redis for session cache          |
+| files            | Supabase Storage   |                                    |
+| audit-logs       | Mongoose (Mongo)   | append-only, never update          |
+| presence         | Redis TTL only     | ephemeral, no DB persistence       |
+
+## NAMING CONVENTIONS
+- Folders:            kebab-case
+- React components:   PascalCase.tsx
+- Hooks:              useXxx.ts (camelCase with use prefix)
+- Utils/helpers:      camelCase.ts
+- Constants:          SCREAMING_SNAKE_CASE inside constants.ts
+- Zod schemas:        camelCaseSchema  (e.g. leaveRequestSchema)
+- API route files:    module.routes.ts
+- Service files:      module.service.ts
+- Mongoose models:    PascalCase.ts    (e.g. Message.ts)
+- Test files:         filename.test.ts (co-located)
+
+## IMPORT ORDER (enforce with ESLint import/order)
+1. Node built-ins       (path, fs, crypto)
+2. External packages    (react, express, zod)
+3. Monorepo packages    (@hrms/types)
+4. Absolute imports     (@/components/..., @/lib/...)
+5. Relative imports     (./EmployeeCard)
+6. Type-only imports    (import type { ... })

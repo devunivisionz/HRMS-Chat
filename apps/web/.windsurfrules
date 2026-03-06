@@ -1,0 +1,205 @@
+# Frontend Rules — apps/web
+# Applies to: all files inside apps/web/
+# Extends: root .windsurfrules
+
+## NEXT.JS APP ROUTER PATTERNS
+
+### Page files (page.tsx)
+- Server Component by default — no 'use client' unless interactivity needed
+- Fetch data using async/await directly in the component
+- Export metadata from page files: `export const metadata: Metadata = { title: '...' }`
+- Use `loading.tsx` for Suspense skeleton loaders
+- Use `error.tsx` for route-level error boundaries
+- Private route components live in `_components/` subfolder (prefixed underscore = private to route)
+
+```tsx
+// CORRECT page.tsx pattern
+import type { Metadata } from 'next';
+import { EmployeeTable } from './_components/EmployeeTable';
+import { getEmployees } from '@/lib/api/employees';
+
+export const metadata: Metadata = { title: 'Employees | HRMS' };
+
+export default async function EmployeesPage() {
+  const employees = await getEmployees();
+  return <EmployeeTable employees={employees} />;
+}
+```
+
+### Client Components ('use client')
+- Add 'use client' ONLY when component uses: useState, useEffect, useRef, onClick, onChange, browser APIs, Socket.io, Supabase Realtime
+- Keep client components small — they cannot use async/await for data fetching
+- Prefer passing data as props from Server Components into Client Components
+
+### Layout files (layout.tsx)
+- layout.tsx wraps all child pages — use for persistent sidebar, header, providers
+- Do NOT fetch per-page data in layout.tsx
+- Providers (QueryClientProvider, ThemeProvider) go in root layout only
+
+## COMPONENT ARCHITECTURE
+
+### File structure for complex components
+```
+components/hrm/EmployeeCard/
+├── EmployeeCard.tsx       ← main component
+├── EmployeeCard.test.tsx  ← unit tests
+└── index.ts               ← re-export only
+```
+
+### Simple components (< 80 lines) — flat files
+```
+components/ui/
+├── Badge.tsx
+├── Spinner.tsx
+└── Avatar.tsx
+```
+
+### Component template
+```tsx
+import { cn } from '@/lib/utils';
+import type { ComponentProps } from './types'; // if needed
+
+interface MyComponentProps {
+  // explicit prop types always
+  className?: string;
+}
+
+export function MyComponent({ className }: MyComponentProps) {
+  return (
+    <div className={cn('base-classes', className)}>
+      ...
+    </div>
+  );
+}
+```
+
+## TAILWIND RULES FOR THIS APP
+
+### Color tokens (use ONLY these — never raw hex)
+- bg-background / text-foreground       — page backgrounds
+- bg-primary / text-primary-foreground  — primary actions, active states
+- bg-muted / text-muted-foreground      — subtle backgrounds, helper text
+- bg-destructive                        — delete, error states
+- border-border                         — all borders
+- text-success (green-600/green-400)    — approved, present states
+- text-warning (yellow-600/yellow-400)  — pending, warning states
+
+### HRM-specific status colors
+```tsx
+// Leave status
+const leaveStatusClass = {
+  PENDING:   'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
+  APPROVED:  'bg-green-100  text-green-800  dark:bg-green-900/30  dark:text-green-400',
+  REJECTED:  'bg-red-100    text-red-800    dark:bg-red-900/30    dark:text-red-400',
+  CANCELLED: 'bg-gray-100   text-gray-600   dark:bg-gray-800      dark:text-gray-400',
+} as const;
+
+// Attendance status
+const attendanceClass = {
+  PRESENT:  'text-green-600 dark:text-green-400',
+  ABSENT:   'text-red-600   dark:text-red-400',
+  HALF_DAY: 'text-yellow-600 dark:text-yellow-400',
+  WFH:      'text-blue-600  dark:text-blue-400',
+  ON_LEAVE: 'text-purple-600 dark:text-purple-400',
+} as const;
+```
+
+### Layout patterns
+```tsx
+// ✅ Standard HRMS page layout
+<div className="flex flex-col gap-6 p-6">
+  {/* Page header */}
+  <div className="flex items-center justify-between">
+    <div>
+      <h1 className="text-2xl font-bold tracking-tight">Employees</h1>
+      <p className="text-sm text-muted-foreground">Manage your team members</p>
+    </div>
+    <Button>Add Employee</Button>
+  </div>
+  {/* Content */}
+  <div className="rounded-lg border bg-card">...</div>
+</div>
+
+// ✅ Standard responsive grid for cards
+<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+
+// ✅ Standard data table wrapper
+<div className="rounded-md border overflow-hidden">
+  <Table>...</Table>
+</div>
+```
+
+## DATA FETCHING PATTERNS
+
+### TanStack Query — queryKey conventions
+```typescript
+// Always use array queryKeys with this hierarchy:
+['employees']                          // all employees
+['employees', employeeId]              // single employee
+['employees', employeeId, 'leaves']    // employee's leaves
+['attendance', { month, year }]        // attendance with params
+['leave-balance', employeeId]          // leave balance
+['chat', 'channels']                   // all channels
+['chat', 'messages', channelId]        // channel messages
+```
+
+### Mutation pattern
+```typescript
+const { mutate, isPending } = useMutation({
+  mutationFn: (data: LeaveRequestInput) => api.post('/leaves', data),
+  onSuccess: () => {
+    queryClient.invalidateQueries({ queryKey: ['leaves'] });
+    queryClient.invalidateQueries({ queryKey: ['leave-balance', user.id] });
+    toast.success('Leave request submitted');
+  },
+  onError: (error: AppError) => {
+    toast.error(error.message ?? 'Something went wrong');
+  },
+});
+```
+
+## FORM PATTERNS
+
+### Always use React Hook Form + Zod
+```tsx
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { leaveRequestSchema, type LeaveRequestInput } from '@hrms/types';
+
+const form = useForm<LeaveRequestInput>({
+  resolver: zodResolver(leaveRequestSchema),
+  defaultValues: { leaveTypeId: '', reason: '' },
+});
+```
+
+### Form field pattern (shadcn FormField)
+```tsx
+<FormField
+  control={form.control}
+  name="leaveTypeId"
+  render={({ field }) => (
+    <FormItem>
+      <FormLabel>Leave Type</FormLabel>
+      <FormControl>
+        <Select onValueChange={field.onChange} defaultValue={field.value}>
+          ...
+        </Select>
+      </FormControl>
+      <FormMessage /> {/* auto-shows Zod error */}
+    </FormItem>
+  )}
+/>
+```
+
+## PWA / SERVICE WORKER
+- Service Worker is at `public/sw.js` — do not put SW logic in app/ directory
+- Permission request for push MUST be inside a button onClick handler
+- Check `Notification.permission` before showing the enable-notifications prompt
+- Store push subscription by POSTing to `/api/notifications/subscribe`
+
+## PERFORMANCE CHECKLIST FOR EVERY NEW PAGE
+- [ ] Is the page a Server Component? (default yes)
+- [ ] Are heavy components lazy-loaded with `dynamic()`?
+- [ ] Are images using `next/image`?
+- [ ] Is data fetched on the server (Server Component) or via useQuery (Client Component)?
+- [ ] Are queryKeys granular enough for targeted invalidation?

@@ -1,0 +1,32 @@
+{
+  "recommendations": [
+    // Core
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    "bradlc.vscode-tailwindcss",
+    "Prisma.prisma",
+
+    // TypeScript
+    "ms-vscode.vscode-typescript-next",
+    "streetsidesoftware.code-spell-checker",
+
+    // Git
+    "eamodio.gitlens",
+    "mhutchie.git-graph",
+
+    // Docker
+    "ms-azuretools.vscode-docker",
+
+    // REST testing (free alternative to Postman)
+    "humao.rest-client",
+
+    // MongoDB
+    "mongodb.mongodb-vscode",
+
+    // Productivity
+    "christian-kohler.path-intellisense",
+    "usernamehw.errorlens",
+    "antfu.iconify",
+    "PKief.material-icon-theme"
+  ]
+}

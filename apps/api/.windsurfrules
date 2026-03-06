@@ -1,0 +1,325 @@
+# Backend Rules — apps/api
+# Applies to: all files inside apps/api/
+# Extends: root .windsurfrules
+
+## EXPRESS MODULE STRUCTURE
+
+Every module follows this exact file structure — no exceptions:
+```
+src/modules/[module-name]/
+├── [module].routes.ts    ← Express Router, middleware chain, delegates to service
+├── [module].service.ts   ← Business logic, DB calls, cache ops
+└── [module].schema.ts    ← Zod input/output schemas for this module
+```
+
+## ROUTE FILE TEMPLATE
+
+```typescript
+// src/modules/leaves/leave.routes.ts
+import { Router } from 'express';
+import { authenticate }  from '@/middleware/auth.middleware';
+import { requireRole }   from '@/middleware/rbac.middleware';
+import { validate }      from '@/middleware/validate.middleware';
+import { auditLog }      from '@/middleware/audit.middleware';
+import { leaveRequestSchema, leaveApprovalSchema } from './leave.schema';
+import { LeaveService }  from './leave.service';
+
+const router  = Router();
+const service = new LeaveService();
+
+// Middleware chain order is FIXED: authenticate → requireRole → validate → handler
+router.get(
+  '/',
+  authenticate,
+  requireRole(['EMPLOYEE', 'MANAGER', 'HR', 'ADMIN']),
+  async (req, res, next) => {
+    try {
+      const leaves = await service.getLeaves(req.user.id, req.user.role, req.query);
+      res.json({ success: true, data: leaves });
+    } catch (err) { next(err); }
+  }
+);
+
+router.post(
+  '/',
+  authenticate,
+  requireRole(['EMPLOYEE', 'MANAGER', 'HR', 'ADMIN']),
+  validate(leaveRequestSchema),
+  async (req, res, next) => {
+    try {
+      const leave = await service.createLeaveRequest(req.user.id, req.body);
+      res.status(201).json({ success: true, data: leave });
+    } catch (err) { next(err); }
+  }
+);
+
+router.patch(
+  '/:id/approve',
+  authenticate,
+  requireRole(['MANAGER', 'HR', 'ADMIN']),
+  validate(leaveApprovalSchema),
+  auditLog('LEAVE_APPROVED'),
+  async (req, res, next) => {
+    try {
+      const leave = await service.approveLeave(req.params.id, req.user.id, req.body);
+      res.json({ success: true, data: leave });
+    } catch (err) { next(err); }
+  }
+);
+
+export { router as leaveRouter };
+```
+
+## SERVICE FILE TEMPLATE
+
+```typescript
+// src/modules/leaves/leave.service.ts
+import { AppError }   from '@/lib/AppError';
+import { prisma }     from '@/lib/prisma';
+import { redis }      from '@/lib/redis';
+import { notifyQueue } from '@/lib/bull';
+import type { LeaveRequestInput } from './leave.schema';
+
+export class LeaveService {
+  // Constructor injection → makes unit testing easy (inject mocks)
+  constructor(
+    private db    = prisma,
+    private cache = redis,
+    private queue = notifyQueue
+  ) {}
+
+  async getLeaves(userId: string, role: string, query: Record<string, unknown>) {
+    const page  = Number(query.page  ?? 1);
+    const limit = Number(query.limit ?? 20);
+
+    // Managers/HR see their team; employees see own
+    const where = role === 'EMPLOYEE' ? { employeeId: userId } : {};
+
+    const [data, total] = await Promise.all([
+      this.db.leaveRequest.findMany({
+        where,
+        select: {
+          id: true, fromDate: true, toDate: true, days: true,
+          status: true, reason: true, createdAt: true,
+          leaveType: { select: { name: true } },
+          employee:  { select: { fullName: true, empCode: true } },
+        },
+        orderBy: { createdAt: 'desc' },
+        take:    limit,
+        skip:    (page - 1) * limit,
+      }),
+      this.db.leaveRequest.count({ where }),
+    ]);
+
+    return { data, meta: { total, page, limit, pages: Math.ceil(total / limit) } };
+  }
+
+  async createLeaveRequest(employeeId: string, input: LeaveRequestInput) {
+    return this.db.$transaction(async (tx) => {
+      // 1. Check balance
+      const balance = await tx.leaveBalance.findFirst({
+        where: { employeeId, leaveTypeId: input.leaveTypeId },
+      });
+
+      if (!balance || balance.remaining < input.days) {
+        throw new AppError('INSUFFICIENT_LEAVE_BALANCE', 400,
+          `Only ${balance?.remaining ?? 0} days remaining`);
+      }
+
+      // 2. Create request
+      const leave = await tx.leaveRequest.create({
+        data: { employeeId, ...input },
+      });
+
+      // 3. Notify manager (async via queue)
+      await this.queue.add('notify', {
+        type:       'LEAVE_REQUEST_SUBMITTED',
+        targetRole: 'MANAGER',
+        managerId:  balance.managerId,
+        payload:    { leaveId: leave.id, employeeId },
+      });
+
+      // 4. Bust Redis cache
+      await this.cache.del(`leave:balance:${employeeId}`);
+
+      return leave;
+    });
+  }
+}
+```
+
+## SCHEMA FILE TEMPLATE
+
+```typescript
+// src/modules/leaves/leave.schema.ts
+import { z } from 'zod';
+
+export const leaveRequestSchema = z.object({
+  leaveTypeId: z.string().uuid(),
+  fromDate:    z.string().datetime({ offset: true }),
+  toDate:      z.string().datetime({ offset: true }),
+  days:        z.number().positive().max(365),
+  reason:      z.string().max(500).optional(),
+}).refine(
+  (d) => new Date(d.toDate) >= new Date(d.fromDate),
+  { message: 'toDate must be after fromDate', path: ['toDate'] }
+);
+
+export const leaveApprovalSchema = z.object({
+  status:  z.enum(['APPROVED', 'REJECTED']),
+  remarks: z.string().max(300).optional(),
+});
+
+// Zod → TypeScript types (single source of truth)
+export type LeaveRequestInput  = z.infer<typeof leaveRequestSchema>;
+export type LeaveApprovalInput = z.infer<typeof leaveApprovalSchema>;
+```
+
+## MIDDLEWARE TEMPLATES
+
+### Auth Middleware
+```typescript
+// src/middleware/auth.middleware.ts
+import { supabaseAdmin } from '@/lib/supabase-admin';
+import { AppError }      from '@/lib/AppError';
+
+export async function authenticate(req: Request, res: Response, next: NextFunction) {
+  const token = req.cookies?.['sb-access-token']
+    ?? req.headers.authorization?.replace('Bearer ', '');
+
+  if (!token) return next(new AppError('UNAUTHORIZED', 401));
+
+  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+
+  if (error || !user) return next(new AppError('INVALID_TOKEN', 401));
+
+  req.user = {
+    id:    user.id,
+    email: user.email!,
+    role:  user.user_metadata?.role ?? 'EMPLOYEE',
+  };
+
+  next();
+}
+```
+
+### RBAC Middleware
+```typescript
+// src/middleware/rbac.middleware.ts
+import { AppError } from '@/lib/AppError';
+
+type Role = 'ADMIN' | 'HR' | 'MANAGER' | 'EMPLOYEE';
+
+export const requireRole = (allowed: Role[]) =>
+  (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) return next(new AppError('UNAUTHORIZED', 401));
+    if (!allowed.includes(req.user.role as Role)) {
+      return next(new AppError('FORBIDDEN', 403, 'Insufficient permissions'));
+    }
+    next();
+  };
+```
+
+### Validate Middleware
+```typescript
+// src/middleware/validate.middleware.ts
+import { ZodSchema } from 'zod';
+import { AppError }  from '@/lib/AppError';
+
+export const validate = (schema: ZodSchema) =>
+  (req: Request, res: Response, next: NextFunction) => {
+    const result = schema.safeParse(req.body);
+    if (!result.success) {
+      return next(new AppError('VALIDATION_ERROR', 400,
+        result.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      ));
+    }
+    req.body = result.data; // replace with parsed+coerced data
+    next();
+  };
+```
+
+## ERROR HANDLING
+
+### AppError class
+```typescript
+// src/lib/AppError.ts
+export class AppError extends Error {
+  constructor(
+    public readonly code:       string,
+    public readonly statusCode: number,
+    message?: string
+  ) {
+    super(message ?? code);
+    this.name = 'AppError';
+    Error.captureStackTrace(this, this.constructor);
+  }
+}
+```
+
+### Global error handler — register LAST in index.ts
+```typescript
+// Must be the last app.use() call
+app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
+  if (err instanceof AppError) {
+    return res.status(err.statusCode).json({
+      success: false,
+      error: { code: err.code, message: err.message },
+    });
+  }
+  // Prisma unique constraint
+  if (err.constructor.name === 'PrismaClientKnownRequestError') {
+    const pErr = err as any;
+    if (pErr.code === 'P2002') {
+      return res.status(409).json({ success: false, error: { code: 'DUPLICATE_ENTRY' } });
+    }
+  }
+  logger.error({ err, url: req.url });
+  res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR' } });
+});
+```
+
+## PRISMA RULES
+- NEVER use `findMany()` without `select` — always specify fields.
+- NEVER use `findMany()` without `take` + `skip` — always paginate.
+- Use `$transaction([])` for multi-step operations that must be atomic.
+- Define `@@index` for ALL columns used in `where` + `orderBy` queries.
+- Prisma migration naming: `pnpm prisma migrate dev --name add_leave_balance_table`
+
+## MONGOOSE RULES
+- ALWAYS call `.lean()` on read-only queries — 2-3x faster (returns plain objects not Mongoose docs).
+- Use cursor-based pagination for chat messages (ObjectId cursor, not offset/skip).
+- Define indexes in the schema file, not in MongoDB Atlas manually.
+- AuditLog collection is APPEND-ONLY — never update or delete documents.
+- ALWAYS validate ObjectId params with `isValidObjectId()` before queries.
+
+## REDIS CACHE CONVENTIONS
+- Key format: `module:entity:id` → `leave:balance:uuid`, `org:chart:deptId`
+- Leave balance TTL: 300 seconds (5 min)
+- Org chart TTL: 600 seconds (10 min)
+- Attendance today TTL: 60 seconds
+- ALWAYS invalidate cache keys on mutation in the same service method.
+
+## BULLMQ JOB NAMING CONVENTIONS
+- Queue: `notifications`   → jobs: `push`, `email`, `in-app`
+- Queue: `payroll`         → jobs: `calculate`, `generate-pdf`, `send-payslip`
+- Queue: `reports`         → jobs: `export-attendance`, `export-payroll`
+- All jobs must have: `attempts: 3`, `backoff: { type: 'exponential', delay: 1000 }`
+
+## SOCKET.IO CONVENTIONS
+- Namespace: `/chat` for all chat events
+- Room naming: `channel:${channelId}` for channels, `dm:${userId1}-${userId2}` (sorted) for DMs
+- Event naming: `noun:verb` pattern — `message:send`, `message:new`, `typing:start`, `typing:stop`, `presence:update`
+- ALWAYS authenticate on socket handshake via JWT in auth header
+- NEVER emit to `io.emit()` — always `io.to(room).emit()`
+
+## NOTIFICATION FLOW — ALWAYS ASYNC
+```
+Event fires → service.emit('event', data)
+           → notification.service picks up
+           → persist to MongoDB
+           → fire Supabase RT event
+           → enqueue BullMQ jobs (push + email)
+           → workers send independently
+```
+NEVER send push or email synchronously inside a request handler.

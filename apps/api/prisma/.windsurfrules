@@ -1,0 +1,62 @@
+# Prisma Schema Rules — apps/api/prisma/
+# Applies to: schema.prisma and migration files
+
+## SCHEMA CONVENTIONS
+
+### Always define these on every model
+- `id` field as UUID: `id String @id @default(uuid())`
+- `createdAt DateTime @default(now())`
+- `updatedAt DateTime @updatedAt` (on mutable models)
+- Soft delete: use `deletedAt DateTime?` — NEVER hard-delete employee/payroll data
+
+### Field ordering within a model
+1. id (PK)
+2. Foreign keys (xxxId fields)
+3. Core data fields
+4. Status/enum fields
+5. Timestamps (createdAt, updatedAt, deletedAt)
+6. Relations (virtual — no DB column)
+7. Indexes (@@index, @@unique)
+
+### Required indexes — add for every query pattern
+```prisma
+// Employee queries
+@@index([departmentId])
+@@index([managerId])
+@@index([status])
+
+// Attendance — most common query: employee + date range
+@@index([employeeId, date])
+@@index([date])
+
+// Leave — common: employee's pending, manager's queue
+@@index([employeeId, status])
+@@index([approvedById])
+@@index([fromDate, toDate])
+
+// Payroll — monthly runs per employee
+@@unique([employeeId, monthYear])
+@@index([monthYear])
+```
+
+### Enum naming — always SCREAMING_SNAKE_CASE values
+```prisma
+enum EmployeeStatus  { ACTIVE INACTIVE ON_NOTICE TERMINATED }
+enum LeaveStatus     { PENDING APPROVED REJECTED CANCELLED }
+enum AttendanceStatus { PRESENT ABSENT HALF_DAY WFH ON_LEAVE }
+enum Role            { ADMIN HR MANAGER EMPLOYEE }
+```
+
+### JSON fields — use for flexible/varying data only
+```prisma
+allowances  Json  // { hra: 5000, da: 2000, ... }
+deductions  Json  // { pf: 1800, esi: 750, tds: 2000 }
+// NOT for structured relational data — use proper tables for those
+```
+
+### Migration rules
+- NEVER edit migration SQL files manually after they're applied.
+- Descriptive migration names: `add_leave_balance_table`, `add_payroll_run_lock_flag`
+- Run `pnpm prisma migrate dev` in development, `pnpm prisma migrate deploy` in production CI.
+- NEVER run `prisma migrate reset` in production.
+- Always run `pnpm prisma generate` after schema changes (updates the Prisma client types).

@@ -1,0 +1,85 @@
+# Mongoose Models Rules — apps/api/models/
+# Applies to: all Mongoose schema/model files
+
+## MODEL FILE TEMPLATE
+```typescript
+import { Schema, model, type Document, type Model } from 'mongoose';
+
+// 1. Interface for document shape (typed fields)
+export interface IMessage extends Document {
+  channelId:   Schema.Types.ObjectId;
+  senderId:    string;        // UUID from PostgreSQL employees table
+  content:     string;
+  contentType: 'text' | 'file' | 'system';
+  parentId:    Schema.Types.ObjectId | null;
+  attachments: Attachment[];
+  reactions:   Reaction[];
+  mentions:    string[];
+  editedAt:    Date | null;
+  deletedAt:   Date | null;
+  createdAt:   Date;
+}
+
+// 2. Sub-document interfaces
+interface Attachment { url: string; name: string; size: number; mimeType: string; }
+interface Reaction   { emoji: string; userIds: string[]; }
+
+// 3. Schema definition
+const MessageSchema = new Schema<IMessage>(
+  {
+    channelId:   { type: Schema.Types.ObjectId, ref: 'Channel', required: true },
+    senderId:    { type: String, required: true },
+    content:     { type: String, default: '' },
+    contentType: { type: String, enum: ['text', 'file', 'system'], default: 'text' },
+    parentId:    { type: Schema.Types.ObjectId, ref: 'Message', default: null },
+    attachments: [{ url: String, name: String, size: Number, mimeType: String }],
+    reactions:   [{ emoji: String, userIds: [String] }],
+    mentions:    [{ type: String }],
+    editedAt:    { type: Date, default: null },
+    deletedAt:   { type: Date, default: null },  // soft delete — never hard delete
+  },
+  {
+    timestamps: true,          // adds createdAt + updatedAt automatically
+    collection: 'messages',    // explicit collection name
+  }
+);
+
+// 4. Indexes — define here, NOT in Atlas UI
+MessageSchema.index({ channelId: 1, createdAt: -1 });   // primary query pattern
+MessageSchema.index({ senderId: 1, createdAt: -1 });
+MessageSchema.index({ mentions: 1 });
+MessageSchema.index({ deletedAt: 1 });
+
+// 5. Export model (check if already registered — important for hot reload)
+export const Message: Model<IMessage> =
+  (mongoose.models.Message as Model<IMessage>) ?? model<IMessage>('Message', MessageSchema);
+```
+
+## RULES FOR ALL MODELS
+
+### Required fields on every schema
+- `timestamps: true` in schema options (auto createdAt + updatedAt)
+- `collection: 'name'` explicit — don't rely on Mongoose auto-pluralization
+- Soft delete via `deletedAt: Date | null` — NEVER hard delete chat messages or audit logs
+
+### Query rules
+- ALWAYS `.lean()` on read-only queries: `Message.find(...).lean()`
+- ALWAYS `.select('field1 field2')` — never retrieve all fields unnecessarily
+- NEVER use `.skip()` for chat pagination — use cursor-based (`_id` less-than cursor)
+- ALWAYS validate ObjectId before querying: `isValidObjectId(id)`
+
+### Indexes required by collection
+```
+messages:      { channelId, createdAt }, { senderId }, { mentions }, { deletedAt }
+channels:      { memberIds }, { type, isPrivate }, { lastMessageAt }
+notifications: { userId, isRead, createdAt }, { userId, createdAt }
+audit_logs:    { actorId, createdAt }, { action, createdAt }, { targetId }
+push_subs:     { userId }, { 'subscription.endpoint' } unique per user+device
+```
+
+### AuditLog is special — APPEND ONLY
+```typescript
+// NEVER add update methods to AuditLog model
+// NEVER call AuditLog.findByIdAndUpdate() or AuditLog.updateOne()
+// Only: new AuditLog({ ... }).save()  OR  AuditLog.create({ ... })
+```
