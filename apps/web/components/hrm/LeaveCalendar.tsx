@@ -96,14 +96,7 @@ export function LeaveCalendar(): React.ReactElement {
             <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300 w-32 text-center">
               {format(currentDate, 'MMMM yyyy')}
             </span>
-            <div className="flex gap-1">
-              <Button variant="outline" size="icon" className="h-8 w-8 rounded-full border-zinc-200 dark:border-zinc-800" onClick={prevMonth}>
-                <ChevronLeft size={16} />
-              </Button>
-              <Button variant="outline" size="icon" className="h-8 w-8 rounded-full border-zinc-200 dark:border-zinc-800" onClick={nextMonth}>
-                <ChevronRight size={16} />
-              </Button>
-            </div>
+
           </div>
         </div>
       </CardHeader>
