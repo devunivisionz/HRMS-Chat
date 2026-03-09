@@ -24,6 +24,11 @@ function copyFiles(src, dest) {
       }
       copyFiles(srcPath, destPath);
     } else if (!item.endsWith('.ts')) {
+      // Ensure destination directory exists before copying file
+      const destDir = path.dirname(destPath);
+      if (!fs.existsSync(destDir)) {
+        fs.mkdirSync(destDir, { recursive: true });
+      }
       fs.copyFileSync(srcPath, destPath);
     }
   }
