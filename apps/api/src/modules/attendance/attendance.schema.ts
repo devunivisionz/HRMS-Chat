@@ -21,3 +21,9 @@ export const clockOutSchema = z.object({
 });
 
 export type ClockOutInput = z.infer<typeof clockOutSchema>;
+
+export const dailyAttendanceSchema = z.object({
+  date: z.string().datetime({ offset: true }).optional(),
+});
+
+export type DailyAttendanceQuery = z.infer<typeof dailyAttendanceSchema>;

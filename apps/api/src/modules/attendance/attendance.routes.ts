@@ -4,11 +4,26 @@ import { authenticate } from '@/middleware/auth.middleware';
 import { requireRole } from '@/middleware/rbac.middleware';
 import { validate } from '@/middleware/validate.middleware';
 
-import { clockInSchema, clockOutSchema, listAttendanceSchema } from './attendance.schema';
+import { clockInSchema, clockOutSchema, listAttendanceSchema, dailyAttendanceSchema } from './attendance.schema';
 import { AttendanceService } from './attendance.service';
 
 const router = Router();
 const service = new AttendanceService();
+
+router.get(
+  '/daily',
+  authenticate,
+  requireRole(['MANAGER', 'HR', 'ADMIN']),
+  async (req, res, next) => {
+    try {
+      const query = dailyAttendanceSchema.parse(req.query);
+      const result = await service.daily({ userId: req.user!.id, role: req.user!.role }, query);
+      return res.json({ success: true, data: result });
+    } catch (err) {
+      return next(err);
+    }
+  }
+);
 
 router.get(
   '/',

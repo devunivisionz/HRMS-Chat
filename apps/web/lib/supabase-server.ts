@@ -12,15 +12,11 @@ export function createSupabaseServerClient() {
 
   return createServerClient(url, anonKey, {
     cookies: {
-      get(name) {
+      get(name: string) {
         return cookieStore.get(name)?.value;
       },
-      set(name, value, options) {
-        cookieStore.set({ name, value, ...options });
-      },
-      remove(name, options) {
-        cookieStore.set({ name, value: '', ...options });
-      },
+      set(_name: string, _value: string, _options?: any) {},
+      remove(_name: string, _options?: any) {},
     },
   });
 }

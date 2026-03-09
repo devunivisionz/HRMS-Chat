@@ -27,6 +27,7 @@ router.post(
         folder,
         originalName: file.originalname,
         bytes: file.buffer,
+        mimeType: file.mimetype,
         userId: req.user!.id,
       });
 

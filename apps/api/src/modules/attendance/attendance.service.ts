@@ -2,8 +2,17 @@ import { prisma } from '@/lib/prisma';
 import { AppError } from '@/lib/AppError';
 import type { PaginatedResponse, Role } from '@hrms/types';
 
-import type { ClockInInput, ClockOutInput, ListAttendanceQuery } from './attendance.schema';
+import type { ClockInInput, ClockOutInput, ListAttendanceQuery, DailyAttendanceQuery } from './attendance.schema';
 
+type DailyStatusRow = {
+  employeeId: string;
+  fullName: string;
+  department: string;
+  status: 'PRESENT' | 'WFH' | 'HALF_DAY' | 'ON_LEAVE' | 'ABSENT' | 'WEEKEND';
+  clockIn: Date | null;
+  clockOut: Date | null;
+  leaveType: string | null;
+};
 type AttendanceRow = {
   id: string;
   employeeId: string;
@@ -105,5 +114,79 @@ export class AttendanceService {
     });
 
     return updated;
+  }
+
+  public async daily(
+    requester: { userId: string; role: Role },
+    query: DailyAttendanceQuery
+  ): Promise<DailyStatusRow[]> {
+    if (requester.role === 'EMPLOYEE') {
+      throw new AppError('FORBIDDEN', 403, 'Requires managerial access');
+    }
+
+    const targetDateStr = query.date ? new Date(query.date) : new Date();
+    // Normalize to start of day in UTC to match prisma
+    const targetDate = new Date(Date.UTC(targetDateStr.getUTCFullYear(), targetDateStr.getUTCMonth(), targetDateStr.getUTCDate()));
+
+    // 1. Get all employees (active, on notice)
+    const employees = await prisma.employee.findMany({
+      where: {
+        status: { in: ['ACTIVE', 'ON_NOTICE'] },
+      },
+      select: {
+        id: true,
+        fullName: true,
+        department: { select: { name: true } },
+      },
+      orderBy: { fullName: 'asc' }
+    });
+
+    // 2. Get attendance records for this date
+    const attendanceRecords = await prisma.attendance.findMany({
+      where: { date: targetDate },
+      select: { employeeId: true, status: true, clockIn: true, clockOut: true },
+    });
+    const attMap = new Map(attendanceRecords.map(a => [a.employeeId, a]));
+
+    // 3. Get approved leave records overlapping this date
+    const leaves = await prisma.leaveRequest.findMany({
+      where: {
+        status: 'APPROVED',
+        fromDate: { lte: targetDate },
+        toDate: { gte: targetDate },
+      },
+      select: { employeeId: true, leaveType: { select: { name: true } } },
+    });
+    const leaveMap = new Map(leaves.map(l => [l.employeeId, l]));
+
+    const isWeekend = targetDate.getUTCDay() === 0 || targetDate.getUTCDay() === 6;
+
+    // 4. Map everything together
+    const results: DailyStatusRow[] = employees.map((emp) => {
+      const att = attMap.get(emp.id);
+      const leave = leaveMap.get(emp.id);
+
+      let status: DailyStatusRow['status'] = 'ABSENT';
+      
+      if (att) {
+        status = att.status as DailyStatusRow['status'];
+      } else if (leave) {
+        status = 'ON_LEAVE';
+      } else if (isWeekend) {
+        status = 'WEEKEND';
+      }
+
+      return {
+        employeeId: emp.id,
+        fullName: emp.fullName,
+        department: emp.department.name,
+        status,
+        clockIn: att?.clockIn || null,
+        clockOut: att?.clockOut || null,
+        leaveType: leave?.leaveType.name || null,
+      };
+    });
+
+    return results;
   }
 }

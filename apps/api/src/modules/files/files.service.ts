@@ -1,7 +1,5 @@
 import path from 'node:path';
 
-import { fileTypeFromBuffer } from 'file-type';
-
 import { AppError } from '@/lib/AppError';
 import { supabaseAdmin } from '@/lib/supabase-admin';
 
@@ -26,10 +24,10 @@ export class FilesService {
     folder: string;
     originalName: string;
     bytes: Buffer;
+    mimeType?: string;
     userId: string;
   }): Promise<{ path: string; mimeType: string; size: number }> {
-    const detected = await fileTypeFromBuffer(params.bytes);
-    const mimeType = detected?.mime ?? 'application/octet-stream';
+    const mimeType = params.mimeType ?? 'application/octet-stream';
 
     ensureAllowedMime(mimeType);
 
