@@ -11,7 +11,7 @@ export const leaveRequestInputSchema = z
     days: z.number().positive().max(365),
     reason: z.string().max(500).optional(),
   })
-  .refine((d) => new Date(d.toDate) >= new Date(d.fromDate), {
+  .refine((data) => new Date(data.toDate) >= new Date(data.fromDate), {
     message: 'toDate must be after fromDate',
     path: ['toDate'],
   });

@@ -26,7 +26,13 @@ fs.copyFileSync('package.json', 'dist/package.json');
 
 // Copy all files (including TypeScript) - let tsx handle compilation at runtime
 function copyAllFiles(src, dest) {
-  if (!fs.existsSync(src)) return;
+  if (!fs.existsSync(src)) {
+    console.log(`Warning: Source directory ${src} does not exist, skipping...`);
+    return;
+  }
+  
+  // Ensure destination directory exists
+  fs.mkdirSync(dest, { recursive: true });
   
   const items = fs.readdirSync(src);
   
@@ -35,7 +41,6 @@ function copyAllFiles(src, dest) {
     const destPath = path.join(dest, item);
     
     if (fs.statSync(srcPath).isDirectory()) {
-      fs.mkdirSync(destPath, { recursive: true });
       copyAllFiles(srcPath, destPath);
     } else {
       fs.copyFileSync(srcPath, destPath);
@@ -45,8 +50,8 @@ function copyAllFiles(src, dest) {
 
 // Copy essential directories
 console.log('Copying source files...');
-copyAllFiles('src', 'dist/src');
-copyAllFiles('prisma', 'dist/prisma');
+copyAllFiles('./src', './dist/src');
+copyAllFiles('./prisma', './dist/prisma');
 
 // Create a simple entry point that uses tsx
 const entryPoint = `
