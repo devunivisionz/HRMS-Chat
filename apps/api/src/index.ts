@@ -44,7 +44,7 @@ app.use(
 app.use(morgan('combined'));
 app.use(generalLimiter);
 
-app.get('/health', (_req, res) => res.json({ success: true, data: { ok: true } }));
+app.get('/api/health', (_req, res) => res.json({ success: true, data: { ok: true } }));
 
 app.use('/auth', authRouter);
 app.use('/employees', employeeRouter);

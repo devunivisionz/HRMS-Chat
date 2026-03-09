@@ -5,6 +5,9 @@ const path = require('path');
 // Simple build script that copies files and uses tsc to transpile
 console.log('Building API for deployment...');
 
+// Set Node.js memory limit for build process
+process.env.NODE_OPTIONS = '--max-old-space-size=256';
+
 // Create dist directory
 if (!fs.existsSync('dist')) {
   fs.mkdirSync('dist', { recursive: true });
