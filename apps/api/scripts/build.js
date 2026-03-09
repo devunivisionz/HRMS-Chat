@@ -5,8 +5,13 @@ const path = require('path');
 // Simple build script that copies files and uses tsc to transpile
 console.log('Building API for deployment...');
 
-// Set Node.js memory limit for build process
-process.env.NODE_OPTIONS = '--max-old-space-size=256';
+// Set aggressive Node.js memory limits
+process.env.NODE_OPTIONS = '--max-old-space-size=128 --max-new-space-size=32';
+
+// Force garbage collection
+if (global.gc) {
+  global.gc();
+}
 
 // Create dist directory
 if (!fs.existsSync('dist')) {
@@ -41,38 +46,43 @@ function copyFiles(src, dest) {
 copyFiles('src', 'dist/src');
 copyFiles('prisma', 'dist/prisma');
 
-// Transpile TypeScript files using babel instead of tsc
+// Transpile TypeScript files using simple approach to save memory
 try {
-  // Install @babel/cli and @babel/preset-env if not present
-  execSync('npm list @babel/cli || npm install --save-dev @babel/cli @babel/preset-env @babel/plugin-transform-typescript', { stdio: 'inherit' });
+  console.log('Compiling TypeScript files...');
   
-  // Create babel config
-  const babelConfig = {
-    presets: [
-      ['@babel/preset-env', { targets: { node: '18' } }],
-      '@babel/preset-typescript'
-    ],
-    plugins: []
-  };
-  
-  fs.writeFileSync('.babelrc', JSON.stringify(babelConfig, null, 2));
-  
-  // Transpile all TypeScript files
-  execSync('npx babel src --out-dir dist/src --extensions ".ts" --copy-files', { stdio: 'inherit' });
-  execSync('npx babel prisma --out-dir dist/prisma --extensions ".ts" --copy-files', { stdio: 'inherit' });
-  
-  // Clean up babel config
-  fs.unlinkSync('.babelrc');
+  // Use tsc directly with minimal flags to save memory
+  execSync('npx tsc --project tsconfig.build.json', { 
+    stdio: 'inherit',
+    maxBuffer: 1024 * 1024 // 1MB buffer limit
+  });
   
 } catch (e) {
-  // Fallback to simple tsc with all errors ignored
-  console.log('Using fallback TypeScript compilation...');
-  try {
-    execSync('npx tsc --project tsconfig.build.json --noEmit false', { stdio: 'inherit' });
-  } catch (e2) {
-    // Even that failed, just copy the files as-is
-    console.log('TypeScript compilation failed, copying files as-is...');
+  console.log('TypeScript compilation failed, copying files as-is...');
+  // If compilation fails, just copy the .ts files as-is for runtime compilation
+  function copyAllFiles(src, dest) {
+    const items = fs.readdirSync(src);
+    
+    for (const item of items) {
+      const srcPath = path.join(src, item);
+      const destPath = path.join(dest, item);
+      
+      if (fs.statSync(srcPath).isDirectory()) {
+        if (!fs.existsSync(destPath)) {
+          fs.mkdirSync(destPath, { recursive: true });
+        }
+        copyAllFiles(srcPath, destPath);
+      } else {
+        const destDir = path.dirname(destPath);
+        if (!fs.existsSync(destDir)) {
+          fs.mkdirSync(destDir, { recursive: true });
+        }
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
   }
+  
+  copyAllFiles('src', 'dist/src');
+  copyAllFiles('prisma', 'dist/prisma');
 }
 
 console.log('Build completed!');

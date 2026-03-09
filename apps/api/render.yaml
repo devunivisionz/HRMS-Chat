@@ -3,14 +3,16 @@ services:
     name: hrms-api
     runtime: node
     plan: free
-    buildCommand: "cd apps/api && pnpm install && pnpm build"
-    startCommand: "cd apps/api && pnpm start"
+    buildCommand: "cd apps/api && NODE_OPTIONS='--max-old-space-size=128' pnpm install --no-frozen-lockfile && NODE_OPTIONS='--max-old-space-size=128' pnpm build"
+    startCommand: "cd apps/api && NODE_OPTIONS='--max-old-space-size=128' node dist/index.js"
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 4000
+      - key: NODE_OPTIONS
+        value: "--max-old-space-size=128"
       - key: DATABASE_URL
         fromDatabase:
           name: hrms-postgres
