@@ -61,7 +61,7 @@ export function usePushSubscription(): UsePushSubscriptionApi {
 
     const sub = await reg.pushManager.subscribe({
       userVisibleOnly: true,
-      applicationServerKey: await urlBase64ToUint8Array(vapidKey),
+      applicationServerKey: (await urlBase64ToUint8Array(vapidKey)) as BufferSource,
     });
 
     const supabase = createSupabaseBrowserClient();

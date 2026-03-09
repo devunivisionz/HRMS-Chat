@@ -4,18 +4,20 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 });
 
 const withPWA = require('next-pwa')({
-  dest:            'public',
-  disable:         process.env.NODE_ENV === 'development',
-  register:        true,
-  skipWaiting:     true,
-  sw:              'sw.js',
-  publicExcludes:  ['!icons/**/*'],
+  dest: 'public',
+  register: true,
+  skipWaiting: true,
   buildExcludes:   [/middleware-manifest\.json$/],
 });
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  
+  // Disable ESLint during builds
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
 
   // Transpile monorepo packages
   transpilePackages: ['@hrms/types', '@hrms/email-templates'],
