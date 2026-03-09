@@ -2,24 +2,32 @@ const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-// Simple build script that copies files and uses tsc to transpile
-console.log('Building API for deployment...');
+// Ultra-minimal build script - NO TypeScript compilation to save memory
+console.log('Building API for deployment (minimal)...');
 
 // Set aggressive Node.js memory limits
-process.env.NODE_OPTIONS = '--max-old-space-size=128 --max-new-space-size=32';
+process.env.NODE_OPTIONS = '--max-old-space-size=64 --max-new-space-size=16';
 
 // Force garbage collection
 if (global.gc) {
   global.gc();
 }
 
-// Create dist directory
-if (!fs.existsSync('dist')) {
-  fs.mkdirSync('dist', { recursive: true });
+// Clean previous build
+if (fs.existsSync('dist')) {
+  fs.rmSync('dist', { recursive: true, force: true });
 }
 
-// Copy all non-TypeScript files
-function copyFiles(src, dest) {
+// Create dist directory
+fs.mkdirSync('dist', { recursive: true });
+
+// Copy package.json for dependencies
+fs.copyFileSync('package.json', 'dist/package.json');
+
+// Copy all files (including TypeScript) - let tsx handle compilation at runtime
+function copyAllFiles(src, dest) {
+  if (!fs.existsSync(src)) return;
+  
   const items = fs.readdirSync(src);
   
   for (const item of items) {
@@ -27,62 +35,25 @@ function copyFiles(src, dest) {
     const destPath = path.join(dest, item);
     
     if (fs.statSync(srcPath).isDirectory()) {
-      if (!fs.existsSync(destPath)) {
-        fs.mkdirSync(destPath, { recursive: true });
-      }
-      copyFiles(srcPath, destPath);
-    } else if (!item.endsWith('.ts')) {
-      // Ensure destination directory exists before copying file
-      const destDir = path.dirname(destPath);
-      if (!fs.existsSync(destDir)) {
-        fs.mkdirSync(destDir, { recursive: true });
-      }
+      fs.mkdirSync(destPath, { recursive: true });
+      copyAllFiles(srcPath, destPath);
+    } else {
       fs.copyFileSync(srcPath, destPath);
     }
   }
 }
 
-// Copy src and prisma folders
-copyFiles('src', 'dist/src');
-copyFiles('prisma', 'dist/prisma');
+// Copy essential directories
+console.log('Copying source files...');
+copyAllFiles('src', 'dist/src');
+copyAllFiles('prisma', 'dist/prisma');
 
-// Transpile TypeScript files using simple approach to save memory
-try {
-  console.log('Compiling TypeScript files...');
-  
-  // Use tsc directly with minimal flags to save memory
-  execSync('npx tsc --project tsconfig.build.json', { 
-    stdio: 'inherit',
-    maxBuffer: 1024 * 1024 // 1MB buffer limit
-  });
-  
-} catch (e) {
-  console.log('TypeScript compilation failed, copying files as-is...');
-  // If compilation fails, just copy the .ts files as-is for runtime compilation
-  function copyAllFiles(src, dest) {
-    const items = fs.readdirSync(src);
-    
-    for (const item of items) {
-      const srcPath = path.join(src, item);
-      const destPath = path.join(dest, item);
-      
-      if (fs.statSync(srcPath).isDirectory()) {
-        if (!fs.existsSync(destPath)) {
-          fs.mkdirSync(destPath, { recursive: true });
-        }
-        copyAllFiles(srcPath, destPath);
-      } else {
-        const destDir = path.dirname(destPath);
-        if (!fs.existsSync(destDir)) {
-          fs.mkdirSync(destDir, { recursive: true });
-        }
-        fs.copyFileSync(srcPath, destPath);
-      }
-    }
-  }
-  
-  copyAllFiles('src', 'dist/src');
-  copyAllFiles('prisma', 'dist/prisma');
-}
+// Create a simple entry point that uses tsx
+const entryPoint = `
+require('dotenv').config();
+require('tsx/register')(require.resolve('./src/index.ts'));
+`;
 
-console.log('Build completed!');
+fs.writeFileSync('dist/index.js', entryPoint);
+
+console.log('Minimal build completed!');

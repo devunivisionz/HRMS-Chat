@@ -6,7 +6,6 @@ import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
-import { Server } from 'socket.io';
 
 import { connectMongo } from '@/lib/mongoose';
 import { AppError } from '@/lib/AppError';
@@ -14,7 +13,6 @@ import { logger } from '@/lib/logger';
 import { generalLimiter } from '@/middleware/rateLimit.middleware';
 import { authRouter } from '@/modules/auth/auth.routes';
 import { attendanceRouter } from '@/modules/attendance/attendance.routes';
-import { chatRouter } from '@/modules/chat/chat.routes';
 import { employeeRouter } from '@/modules/employees/employee.routes';
 import { leaveRouter } from '@/modules/leaves/leave.routes';
 import { filesRouter } from '@/modules/files/files.routes';
@@ -25,7 +23,6 @@ import { payrollRouter } from '@/modules/payroll/payroll.routes';
 import { startPayrollWorker } from '@/modules/payroll/payroll.worker';
 import { performanceRouter } from '@/modules/performance/performance.routes';
 import { recruitmentRouter } from '@/modules/recruitment/recruitment.routes';
-import { registerChatGateway } from '@/modules/chat/chat.gateway';
 
 const app = express();
 
@@ -54,7 +51,6 @@ app.use('/leaves', leaveRouter);
 app.use('/payroll', payrollRouter);
 app.use('/performance', performanceRouter);
 app.use('/recruitment', recruitmentRouter);
-app.use('/chat', chatRouter);
 app.use('/notifications', notificationRouter);
 
 app.use((_req, _res, next) => next(new AppError('NOT_FOUND', 404, 'Not found')));
@@ -79,15 +75,6 @@ const server = http.createServer(app);
 
 export async function createServer(): Promise<http.Server> {
   await connectMongo();
-
-  const io = new Server(server, {
-    cors: {
-      origin: process.env.FRONTEND_URL ?? 'http://localhost:3000',
-      credentials: true,
-    },
-  });
-
-  registerChatGateway(io);
 
   const url = new URL(process.env.REDIS_URL ?? 'redis://localhost:6379');
   const connection = {

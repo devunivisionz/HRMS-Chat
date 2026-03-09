@@ -288,7 +288,6 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
 
 ## MONGOOSE RULES
 - ALWAYS call `.lean()` on read-only queries — 2-3x faster (returns plain objects not Mongoose docs).
-- Use cursor-based pagination for chat messages (ObjectId cursor, not offset/skip).
 - Define indexes in the schema file, not in MongoDB Atlas manually.
 - AuditLog collection is APPEND-ONLY — never update or delete documents.
 - ALWAYS validate ObjectId params with `isValidObjectId()` before queries.
@@ -306,15 +305,7 @@ app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
 - Queue: `reports`         → jobs: `export-attendance`, `export-payroll`
 - All jobs must have: `attempts: 3`, `backoff: { type: 'exponential', delay: 1000 }`
 
-## SOCKET.IO CONVENTIONS
-- Namespace: `/chat` for all chat events
-- Room naming: `channel:${channelId}` for channels, `dm:${userId1}-${userId2}` (sorted) for DMs
-- Event naming: `noun:verb` pattern — `message:send`, `message:new`, `typing:start`, `typing:stop`, `presence:update`
-- ALWAYS authenticate on socket handshake via JWT in auth header
-- NEVER emit to `io.emit()` — always `io.to(room).emit()`
-
 ## NOTIFICATION FLOW — ALWAYS ASYNC
-```
 Event fires → service.emit('event', data)
            → notification.service picks up
            → persist to MongoDB

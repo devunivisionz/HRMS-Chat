@@ -1,6 +1,6 @@
 // prisma/schema.prisma
 // HRMS Core — PostgreSQL via Prisma ORM
-// Chat, notifications, audit logs → MongoDB (Mongoose)
+// Notifications, audit logs → MongoDB (Mongoose)
 // Auth + Storage → Supabase
 
 generator client {

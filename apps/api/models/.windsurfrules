@@ -60,18 +60,15 @@ export const Message: Model<IMessage> =
 ### Required fields on every schema
 - `timestamps: true` in schema options (auto createdAt + updatedAt)
 - `collection: 'name'` explicit — don't rely on Mongoose auto-pluralization
-- Soft delete via `deletedAt: Date | null` — NEVER hard delete chat messages or audit logs
+- Soft delete via `deletedAt: Date | null` — NEVER hard delete audit logs
 
 ### Query rules
-- ALWAYS `.lean()` on read-only queries: `Message.find(...).lean()`
+- ALWAYS `.lean()` on read-only queries: `Model.find(...).lean()`
 - ALWAYS `.select('field1 field2')` — never retrieve all fields unnecessarily
-- NEVER use `.skip()` for chat pagination — use cursor-based (`_id` less-than cursor)
 - ALWAYS validate ObjectId before querying: `isValidObjectId(id)`
 
 ### Indexes required by collection
 ```
-messages:      { channelId, createdAt }, { senderId }, { mentions }, { deletedAt }
-channels:      { memberIds }, { type, isPrivate }, { lastMessageAt }
 notifications: { userId, isRead, createdAt }, { userId, createdAt }
 audit_logs:    { actorId, createdAt }, { action, createdAt }, { targetId }
 push_subs:     { userId }, { 'subscription.endpoint' } unique per user+device
