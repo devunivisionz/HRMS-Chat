@@ -65,7 +65,7 @@ router.patch(
   requireRole(['EMPLOYEE', 'MANAGER', 'HR', 'ADMIN']),
   async (req, res, next) => {
     try {
-      const result = await service.markRead(req.params.id, req.user!.id);
+      const result = await service.markRead(String(req.params.id), req.user!.id);
       return res.json({ success: true, data: result });
     } catch (err) {
       return next(err);

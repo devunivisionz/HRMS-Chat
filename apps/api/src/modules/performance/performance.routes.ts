@@ -42,7 +42,7 @@ router.patch(
   validate(rateGoalSchema),
   async (req, res, next) => {
     try {
-      const updated = await service.rateGoal(req.params.id, { userId: req.user!.id, role: req.user!.role }, req.body);
+      const updated = await service.rateGoal(String(req.params.id), { userId: req.user!.id, role: req.user!.role }, req.body);
       return res.json({ success: true, data: updated });
     } catch (err) {
       return next(err);

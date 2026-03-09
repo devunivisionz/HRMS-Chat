@@ -50,7 +50,13 @@ export class LeaveService {
       prisma.leaveRequest.count({ where }),
     ]);
 
-    return { data, meta: { total, page, limit, pages: Math.ceil(total / limit) } };
+    return { 
+      data: data.map(leave => ({
+        ...leave,
+        days: leave.days?.toString() || '0'
+      })), 
+      meta: { total, page, limit, pages: Math.ceil(total / limit) } 
+    };
   }
 
   public async create(employeeId: string, input: LeaveRequestInput): Promise<{ id: string }> {

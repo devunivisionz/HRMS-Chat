@@ -56,7 +56,14 @@ export class PayrollService {
       prisma.payrollRun.count({ where }),
     ]);
 
-    return { data, meta: { total, page, limit, pages: Math.ceil(total / limit) } };
+    return { 
+      data: data.map(pay => ({
+        ...pay,
+        grossPay: pay.grossPay?.toString() || '0',
+        netPay: pay.netPay?.toString() || '0'
+      })), 
+      meta: { total, page, limit, pages: Math.ceil(total / limit) } 
+    };
   }
 
   public async runPayroll(requesterId: string, input: RunPayrollInput): Promise<{ jobId: string }> {

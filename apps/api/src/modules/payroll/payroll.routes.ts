@@ -37,7 +37,7 @@ router.post(
 
 router.post('/runs/:id/lock', authenticate, requireRole(['HR', 'ADMIN']), async (req, res, next) => {
   try {
-    const result = await service.lockRun(req.params.id);
+    const result = await service.lockRun(String(req.params.id));
     return res.json({ success: true, data: result });
   } catch (err) {
     return next(err);

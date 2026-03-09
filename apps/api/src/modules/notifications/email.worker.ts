@@ -97,9 +97,9 @@ export function startEmailWorker(connection: { host: string; port: number; passw
       } else if (data.type === 'MENTION') {
         const props = {
           employeeName: 'Employee',
-          items: [],
+          items: [] as any[],
           loginUrl: process.env.FRONTEND_URL ?? 'http://localhost:3000',
-        } as const;
+        };
         html = render(MentionDigestEmail(props));
         text = mentionDigestText(props);
       }

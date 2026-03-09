@@ -68,7 +68,10 @@ export class AttendanceService {
     ]);
 
     return {
-      data,
+      data: data.map(att => ({
+        ...att,
+        totalHours: att.totalHours?.toString() || '0'
+      })),
       meta: { total, page, limit, pages: Math.ceil(total / limit) },
     };
   }

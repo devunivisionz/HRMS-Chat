@@ -38,7 +38,7 @@ router.post('/jobs', authenticate, requireRole(['HR', 'ADMIN']), validate(create
 router.get('/jobs/:jobPostingId/applicants', authenticate, requireRole(['HR', 'ADMIN']), async (req, res, next) => {
   try {
     const query = listApplicantsSchema.parse(req.query);
-    const result = await service.listApplicants(req.params.jobPostingId, query);
+    const result = await service.listApplicants(String(req.params.jobPostingId), query);
     return res.json({ success: true, data: result });
   } catch (err) {
     return next(err);
@@ -62,7 +62,7 @@ router.patch(
   async (req, res, next) => {
     try {
       const updated = await service.updateApplicantStage(
-        req.params.id,
+        String(req.params.id),
         { userId: req.user!.id, role: req.user!.role },
         req.body
       );

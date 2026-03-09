@@ -4,18 +4,6 @@ import { supabaseAdmin } from '@/lib/supabase-admin';
 import { AppError } from '@/lib/AppError';
 import type { Role } from '@hrms/types';
 
-declare module 'express-serve-static-core' {
-  type User = {
-    id: string;
-    email: string;
-    role: Role;
-  };
-
-  interface Request {
-    user?: User;
-  }
-}
-
 export const authenticate: RequestHandler = async (req, _res, next) => {
   const token =
     req.cookies?.['sb-access-token'] ??

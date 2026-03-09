@@ -10,7 +10,7 @@ export const auditLog = (action: string): RequestHandler =>
       await AuditLog.create({
         actorId: req.user.id,
         action,
-        targetId: req.params.id ?? null,
+        targetId: String(req.params.id) ?? null,
         meta: {
           method: req.method,
           url: req.originalUrl,

@@ -18,7 +18,7 @@ function createLimiter(prefix: string, windowMs: number, max: number): RequestHa
     store: new RedisStore({
       sendCommand: async (command: string, ...args: string[]) => {
         const result = await redis.call(command, ...args);
-        return result as unknown;
+        return result as any;
       },
       prefix: prefixKey(prefix),
     }),

@@ -60,7 +60,7 @@ router.patch(
   async (req, res, next) => {
     try {
       type ApproveResult = { id: string; status: string; employeeId: string };
-      const updated: ApproveResult = await service.approve(req.params.id, req.user!.id, req.body) as ApproveResult;
+      const updated: ApproveResult = await service.approve(String(String(req.params.id)), req.user!.id, req.body) as ApproveResult;
       await redis.del(`leave:balances:${updated.employeeId}:*`);
       return res.json({ success: true, data: { id: updated.id, status: updated.status } });
     } catch (err) {

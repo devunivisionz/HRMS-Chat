@@ -5,6 +5,10 @@
     "lib": ["ES2022"],
     "outDir": "./dist",
     "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    },
     "strict": false,
     "noImplicitAny": false,
     "strictNullChecks": false,
@@ -23,7 +27,10 @@
     "declaration": false,
     "sourceMap": false,
     "removeComments": true,
-    "noEmitOnError": false
+    "noEmitOnError": false,
+    "moduleResolution": "node",
+    "allowJs": true,
+    "checkJs": false
   },
   "include": ["src/**/*.ts", "prisma/seed.ts"],
   "exclude": ["node_modules", "dist", "**/*.test.ts", "**/*.spec.ts"]

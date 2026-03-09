@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { roleSchema, Role } from './common';
 
 export const employeeStatusSchema = z.enum(['ACTIVE', 'INACTIVE', 'ON_NOTICE', 'TERMINATED']);
 export type EmployeeStatus = z.infer<typeof employeeStatusSchema>;
@@ -13,6 +14,7 @@ export const createEmployeeInputSchema = z.object({
   designation: z.string().min(1).max(120),
   joiningDate: z.string().datetime({ offset: true }),
   status: employeeStatusSchema.optional(),
+  role: roleSchema.optional(),
 });
 
 export type CreateEmployeeInput = z.infer<typeof createEmployeeInputSchema>;
@@ -27,6 +29,7 @@ export type Employee = {
   managerId?: string;
   designation: string;
   joiningDate: string;
+  role: Role;
   status: EmployeeStatus;
   createdAt: string;
   updatedAt: string;
